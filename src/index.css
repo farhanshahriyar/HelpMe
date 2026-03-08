@@ -1,0 +1,183 @@
+@import 'katex/dist/katex.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Thin custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Selection color */
+::selection {
+  background: rgba(239, 68, 68, 0.3);
+  color: white;
+}
+
+/* Glass panel */
+.glass-panel {
+  background: rgba(9, 9, 11, 0.88);
+  backdrop-filter: blur(40px) saturate(150%);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 25px 60px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Drag region */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Cursor blink for streaming */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink::after {
+  content: '▋';
+  display: inline-block;
+  animation: cursor-blink 0.8s step-start infinite;
+  color: rgba(239, 68, 68, 0.8);
+  margin-left: 1px;
+  font-size: 0.9em;
+}
+
+/* Prose / markdown overrides */
+.prose-helpme {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.prose-helpme h1,
+.prose-helpme h2,
+.prose-helpme h3,
+.prose-helpme h4 {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+.prose-helpme h1 { font-size: 1.1em; }
+.prose-helpme h2 { font-size: 1.05em; }
+.prose-helpme h3 { font-size: 1em; }
+.prose-helpme p {
+  margin-bottom: 0.65em;
+}
+.prose-helpme ul, .prose-helpme ol {
+  padding-left: 1.4em;
+  margin-bottom: 0.65em;
+}
+.prose-helpme li {
+  margin-bottom: 0.25em;
+}
+.prose-helpme strong {
+  color: rgba(255, 255, 255, 1);
+  font-weight: 600;
+}
+.prose-helpme em {
+  color: rgba(255, 255, 255, 0.8);
+}
+.prose-helpme code {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.88em;
+  font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+  color: rgba(196, 148, 255, 0.95);
+}
+.prose-helpme pre {
+  background: rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 8px !important;
+  margin: 0.75em 0 !important;
+  overflow: auto;
+}
+.prose-helpme pre code {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  color: inherit !important;
+  font-size: 12px !important;
+}
+.prose-helpme blockquote {
+  border-left: 2px solid rgba(239, 68, 68, 0.5);
+  padding-left: 0.75em;
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+  margin: 0.5em 0;
+}
+.prose-helpme hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 0.75em 0;
+}
+.prose-helpme a {
+  color: rgba(239, 68, 68, 0.9);
+  text-decoration: underline;
+  text-decoration-color: rgba(168, 85, 247, 0.4);
+}
+.prose-helpme table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 0.75em 0;
+}
+.prose-helpme th {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.prose-helpme td {
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* KaTeX overrides for dark theme */
+.katex {
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-size: 1em !important;
+}
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+}
