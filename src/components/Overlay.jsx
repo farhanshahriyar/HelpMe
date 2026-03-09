@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Camera, Settings, X, Send, ChevronDown, ChevronUp, AlertCircle, Sparkles, Check,
-  Circle, Square, Mic, MicOff, MoreVertical,
+  Circle, Square, Mic, MicOff, MoreVertical, FileText,
 } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import SettingsPanel from './Settings';
@@ -36,6 +36,10 @@ export default function Overlay({
   const [showTranscript, setShowTranscript] = useState(true);
   const [hasTranscript, setHasTranscript] = useState(false);
 
+  // ── PDF state ─────────────────────────────────────────────────────────────
+  const [pdfName, setPdfName] = useState(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
   // ── Refs ─────────────────────────────────────────────────────────────────
   const responseRef = useRef(null);
   const textareaRef = useRef(null);
@@ -59,6 +63,31 @@ export default function Overlay({
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(t);
     toastTimerRef.current = setTimeout(() => setToast(null), ms);
+  }, []);
+
+  // ── PDF handlers ──────────────────────────────────────────────────────
+  const handleOpenPdf = useCallback(async () => {
+    if (pdfLoading) return;
+    setPdfLoading(true);
+    try {
+      const result = await window.electronAPI.openPdfDialog();
+      if (!result) return; // user cancelled
+      if (result.error) {
+        flash({ type: 'error', message: result.error });
+      } else {
+        setPdfName(result.name);
+        flash({ type: 'success', message: `"${result.name}" ready · ${result.pageCount} page${result.pageCount !== 1 ? 's' : ''}` }, 4000);
+      }
+    } catch (err) {
+      flash({ type: 'error', message: err.message || 'PDF upload failed' });
+    } finally {
+      setPdfLoading(false);
+    }
+  }, [pdfLoading, flash]);
+
+  const handleClearPdf = useCallback(() => {
+    window.electronAPI.clearPdf();
+    setPdfName(null);
   }, []);
 
   // ── Recording callbacks ────────────────────────────────────────────────
@@ -273,10 +302,10 @@ export default function Overlay({
   // ── Other handlers ────────────────────────────────────────────────────
   const handleSubmit = useCallback(() => {
     if (status === 'thinking' || status === 'streaming') return;
-    if (!question.trim() && !screenshot && !hasTranscript) return;
+    if (!question.trim() && !screenshot && !hasTranscript && !pdfName) return;
     const q = question.trim();
-    fireAction(q || (hasTranscript ? 'Live analysis' : 'Analyze screen'), q);
-  }, [question, screenshot, status, hasTranscript, fireAction]);
+    fireAction(q || (hasTranscript ? 'Live analysis' : pdfName ? 'PDF analysis' : 'Analyze screen'), q);
+  }, [question, screenshot, status, hasTranscript, pdfName, fireAction]);
 
   const handleKeyDown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSubmit(); } };
 
@@ -417,11 +446,24 @@ export default function Overlay({
             </button>
 
             {showMenu && (
-              <div className="absolute top-full right-0 mt-1 w-36 bg-zinc-900/95 backdrop-blur-xl border border-white/[0.08] rounded-lg shadow-2xl shadow-black/60 py-1 z-50">
+              <div className="absolute top-full right-0 mt-1 w-40 bg-zinc-900/95 backdrop-blur-xl border border-white/[0.08] rounded-lg shadow-2xl shadow-black/60 py-1 z-50">
                 <button onClick={() => { setShowSettings(s => !s); setShowMenu(false); }}
                   className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
                   <Settings className="w-3 h-3" /> Add API Key
                 </button>
+                <button
+                  onClick={() => { handleOpenPdf(); setShowMenu(false); }}
+                  disabled={pdfLoading}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors disabled:opacity-40">
+                  <FileText className="w-3 h-3" />
+                  {pdfLoading ? 'Parsing PDF…' : pdfName ? 'Replace PDF' : 'Upload PDF'}
+                </button>
+                {pdfName && (
+                  <button onClick={() => { handleClearPdf(); setShowMenu(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-400/70 hover:text-red-400 hover:bg-red-500/5 transition-colors">
+                    <X className="w-3 h-3" /> Remove PDF
+                  </button>
+                )}
                 {isRecording && (
                   <button onClick={() => { stopRecording(); setShowMenu(false); }}
                     className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors">
@@ -495,6 +537,19 @@ export default function Overlay({
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── PDF badge ── */}
+            {pdfName && (
+              <div className="border-t border-white/[0.06] px-3 py-2">
+                <div className="flex items-center gap-2 bg-white/[0.04] border border-white/[0.06] rounded-md px-2.5 py-1.5">
+                  <FileText className="w-3 h-3 text-red-400 shrink-0" />
+                  <span className="text-zinc-300 text-[10px] truncate flex-1">{pdfName}</span>
+                  <button onClick={handleClearPdf} className="p-0.5 text-zinc-600 hover:text-zinc-300 transition-colors">
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
               </div>
             )}
 
@@ -575,7 +630,7 @@ export default function Overlay({
                 />
                 <button
                   onClick={handleSubmit}
-                  disabled={isLoading || (!question.trim() && !screenshot && !hasTranscript)}
+                  disabled={isLoading || (!question.trim() && !screenshot && !hasTranscript && !pdfName)}
                   className={cn(
                     'no-drag shrink-0 w-6 h-6 rounded-md flex items-center justify-center transition-all',
                     'bg-red-600 hover:bg-red-500 text-white',

@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveRecording: (buf) => ipcRenderer.invoke('save-recording', buf),
   transcribeAudio: (buf) => ipcRenderer.invoke('transcribe-audio', buf),
   getEnvConfig: () => ipcRenderer.invoke('get-env-config'),
+  openPdfDialog: () => ipcRenderer.invoke('open-pdf-dialog'),
+  clearPdf: () => ipcRenderer.send('clear-pdf'),
 
   onScreenshot: (cb) => {
     ipcRenderer.removeAllListeners('screenshot-taken');

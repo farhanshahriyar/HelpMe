@@ -12,11 +12,12 @@
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
-    "openai": "^4.77.0",
     "clsx": "^2.1.1",
     "dotenv": "^16.4.5",
     "katex": "^0.16.11",
     "lucide-react": "^0.469.0",
+    "openai": "^4.77.0",
+    "pdf-parse": "^2.4.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
@@ -41,8 +42,17 @@
   "build": {
     "appId": "com.helpme.desktop",
     "productName": "HelpMe",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "electron/**/*", "node_modules/**/*", "package.json"],
-    "win": { "target": "nsis" }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    }
   }
 }

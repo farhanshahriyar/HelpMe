@@ -8,6 +8,7 @@ const {
   desktopCapturer,
   screen,
   session,
+  dialog,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -28,6 +29,7 @@ if (!gotLock) {
 
 let overlayWindow = null;
 let providerConfig = {};
+let pdfContext = null; // { name, text }
 
 // ── System Prompt ────────────────────────────────────────────────────────────
 let SYSTEM_PROMPT;
@@ -46,13 +48,16 @@ Your goal is to help the user at the current moment in the conversation. You can
 }
 
 // ── Helper: build user prompt ────────────────────────────────────────────────
-function buildUserText(question, transcript) {
+function buildUserText(question, transcript, pdfText) {
   const parts = [];
+  if (pdfText) parts.push(`<pdf_document>\n${pdfText}\n</pdf_document>`);
   if (transcript) parts.push(`<live_transcript>\n${transcript}\n</live_transcript>`);
   if (question) {
     parts.push(question);
   } else if (transcript) {
     parts.push('Analyze the current moment in the conversation and provide relevant assistance based on the transcript and what is visible on the screen.');
+  } else if (pdfText) {
+    parts.push('Summarize the key points of the PDF document.');
   } else {
     parts.push('Analyze what is on the screen and help me.');
   }
@@ -236,7 +241,7 @@ ipcMain.handle('generate', async (_event, { screenshotBase64, question, transcri
     if (screenshotBase64) {
       content.push({ type: 'image_url', image_url: { url: screenshotBase64, detail: 'high' } });
     }
-    content.push({ type: 'text', text: buildUserText(question, transcript) });
+    content.push({ type: 'text', text: buildUserText(question, transcript, pdfContext?.text || null) });
     const result = await client.chat.completions.create({
       model: cfg.model || 'gpt-4o-mini',
       messages: [
@@ -252,6 +257,29 @@ ipcMain.handle('generate', async (_event, { screenshotBase64, question, transcri
     return { error: err.message || 'Generation failed.' };
   }
 });
+
+ipcMain.handle('open-pdf-dialog', async () => {
+  const result = await dialog.showOpenDialog(overlayWindow, {
+    title: 'Select a PDF',
+    properties: ['openFile'],
+    filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const filePath = result.filePaths[0];
+  try {
+    const pdfParse = require('pdf-parse');
+    const dataBuffer = fs.readFileSync(filePath);
+    const data = await pdfParse(dataBuffer);
+    const name = path.basename(filePath);
+    pdfContext = { name, text: data.text };
+    return { name, pageCount: data.numpages };
+  } catch (err) {
+    console.error('[HelpMe] PDF parse error:', err.message || err);
+    return { error: err.message || 'Failed to parse PDF' };
+  }
+});
+
+ipcMain.on('clear-pdf', () => { pdfContext = null; });
 
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', (e) => e.preventDefault());
