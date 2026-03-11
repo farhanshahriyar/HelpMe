@@ -10,7 +10,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getEnvConfig: () => ipcRenderer.invoke('get-env-config'),
   openPdfDialog: () => ipcRenderer.invoke('open-pdf-dialog'),
   clearPdf: () => ipcRenderer.send('clear-pdf'),
+  
+  startCrop: () => ipcRenderer.send('start-crop'),
+  finishCrop: () => ipcRenderer.send('finish-crop'),
 
+  onStartCropUI: (cb) => {
+    ipcRenderer.removeAllListeners('start-crop-ui');
+    ipcRenderer.on('start-crop-ui', (_, dataUrl) => cb(dataUrl));
+  },
   onScreenshot: (cb) => {
     ipcRenderer.removeAllListeners('screenshot-taken');
     ipcRenderer.on('screenshot-taken', (_, data) => cb(data));
@@ -33,7 +40,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   clearListeners: () => {
-    ['screenshot-taken', 'gen-chunk', 'gen-done', 'gen-error', 'stop-recording-signal'].forEach(ch => {
+    ['screenshot-taken', 'gen-chunk', 'gen-done', 'gen-error', 'stop-recording-signal', 'start-crop-ui'].forEach(ch => {
       ipcRenderer.removeAllListeners(ch);
     });
   },

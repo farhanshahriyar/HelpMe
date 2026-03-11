@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import Overlay from './components/Overlay';
+import CropOverlay from './components/CropOverlay';
 
 export default function App() {
   const [screenshot, setScreenshot] = useState(null);
+  const [cropImage, setCropImage] = useState(null);
+  const [pendingQuestion, setPendingQuestion] = useState(null);
+  const [autoSubmit, setAutoSubmit] = useState(false);
   const [providerConfig, setProviderConfig] = useState(() => {
     try {
       const stored = localStorage.getItem('helpme_provider_config');
@@ -12,6 +16,12 @@ export default function App() {
   const [configLoaded, setConfigLoaded] = useState(!!providerConfig);
 
   useEffect(() => {
+    if (!window.electronAPI) {
+      console.warn('[HelpMe] window.electronAPI is undefined. Are you running in a browser?');
+      setConfigLoaded(true);
+      return;
+    }
+
     if (!providerConfig) {
       // Load API key from .env via main process on first launch
       window.electronAPI.getEnvConfig().then((envCfg) => {
@@ -22,13 +32,18 @@ export default function App() {
           setProviderConfig(config);
         }
         setConfigLoaded(true);
-      }).catch(() => setConfigLoaded(true));
+      }).catch((err) => {
+        console.error('[HelpMe] getEnvConfig error:', err);
+        setConfigLoaded(true);
+      });
     } else {
       window.electronAPI.setProviderConfig(providerConfig);
+      setConfigLoaded(true);
     }
 
     // onScreenshot auto-removes previous listener before registering
     window.electronAPI.onScreenshot((dataUrl) => setScreenshot(dataUrl));
+    window.electronAPI.onStartCropUI((dataUrl) => setCropImage(dataUrl));
   }, []);
 
   const handleSaveConfig = (config) => {
@@ -39,11 +54,43 @@ export default function App() {
 
   if (!configLoaded) return null;
 
+  if (cropImage) {
+    return (
+      <CropOverlay
+        image={cropImage}
+        onCrop={(dataUrl) => {
+          setCropImage(null);
+          window.electronAPI.finishCrop();
+          setScreenshot(dataUrl);
+          if (autoSubmit) {
+            setAutoSubmit(false);
+            // We'll let Overlay handle the submission via a ref or by detecting the state change.
+            // But since Overlay is a separate component, we can use a small delay or a trigger prop.
+          }
+        }}
+        onCancel={() => {
+          setCropImage(null);
+          setPendingQuestion(null);
+          setAutoSubmit(false);
+          window.electronAPI.finishCrop();
+        }}
+      />
+    );
+  }
+
   return (
     <Overlay
       screenshot={screenshot}
       providerConfig={providerConfig}
-      onNewCapture={() => window.electronAPI.captureScreen()}
+      pendingQuestion={pendingQuestion}
+      onNewCapture={() => window.electronAPI.startCrop()}
+      onCaptureAndSubmit={(question) => {
+        setPendingQuestion(question);
+        setAutoSubmit(true);
+        window.electronAPI.startCrop();
+      }}
+      onClearPending={() => setPendingQuestion(null)}
+      onPasteImage={(dataUrl) => setScreenshot(dataUrl)}
       onClose={() => window.electronAPI.hideOverlay()}
       onSaveConfig={handleSaveConfig}
       initialShowSettings={!providerConfig?.openai?.apiKey}

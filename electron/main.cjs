@@ -1,5 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
+const electron = require('electron');
 const {
   app,
   BrowserWindow,
@@ -9,7 +10,7 @@ const {
   screen,
   session,
   dialog,
-} = require('electron');
+} = electron;
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -71,8 +72,8 @@ function createOverlay() {
   overlayWindow = new BrowserWindow({
     width: 440,
     height: 680,
-    x: width - 460,
-    y: 30,
+    x: width - 480, // Slightly more padding from right
+    y: 50,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -110,7 +111,41 @@ function createOverlay() {
   overlayWindow.on('closed', () => { overlayWindow = null; });
 }
 
+let originalBounds = null;
+
+async function startCropSequence(event) {
+  if (!overlayWindow) return;
+  originalBounds = overlayWindow.getBounds();
+  overlayWindow.hide();
+  await new Promise(r => setTimeout(r, 180));
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.size;
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } });
+    const primary = sources.find(s => s.display_id === String(primaryDisplay.id)) || sources[0];
+    
+    // Capture full resolution so user can crop clearly
+    const dataUrl = primary ? 'data:image/jpeg;base64,' + primary.thumbnail.toJPEG(90).toString('base64') : null;
+    
+    if (dataUrl) {
+      overlayWindow.setBounds(primaryDisplay.bounds);
+      overlayWindow.show();
+      overlayWindow.focus();
+      event.sender.send('start-crop-ui', dataUrl);
+    } else {
+      overlayWindow.show();
+      overlayWindow.focus();
+    }
+  } catch (err) {
+    console.error('Crop capture error:', err);
+    overlayWindow.setBounds(originalBounds);
+    overlayWindow.show();
+    overlayWindow.focus();
+  }
+}
+
 async function captureAndSend(sendFn) {
+  // Keeping this for generic screenshot generation if needed, but not scaled down
   if (!overlayWindow) return;
   overlayWindow.hide();
   await new Promise(r => setTimeout(r, 180));
@@ -119,7 +154,7 @@ async function captureAndSend(sendFn) {
     const { width, height } = primaryDisplay.size;
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } });
     const primary = sources.find(s => s.display_id === String(primaryDisplay.id)) || sources[0];
-    const dataUrl = primary ? primary.thumbnail.toDataURL('image/png') : null;
+    const dataUrl = primary ? 'data:image/jpeg;base64,' + primary.thumbnail.toJPEG(90).toString('base64') : null;
     overlayWindow?.show();
     overlayWindow?.focus();
     await new Promise(r => setTimeout(r, 80));
@@ -134,9 +169,8 @@ async function captureAndSend(sendFn) {
 }
 
 async function captureAndReveal() {
-  await captureAndSend((dataUrl) => {
-    overlayWindow?.webContents.send('screenshot-taken', dataUrl);
-  });
+  if (!overlayWindow) return;
+  startCropSequence({ sender: overlayWindow.webContents });
 }
 
 app.whenReady().then(() => {
@@ -197,6 +231,16 @@ ipcMain.handle('get-env-config', () => providerConfig);
 
 ipcMain.on('hide-overlay', () => { if (overlayWindow) overlayWindow.hide(); });
 
+ipcMain.on('start-crop', (event) => {
+  startCropSequence(event);
+});
+
+ipcMain.on('finish-crop', () => {
+  if (overlayWindow && originalBounds) {
+    overlayWindow.setBounds(originalBounds);
+  }
+});
+
 ipcMain.on('capture-screen', async (event) => {
   await captureAndSend((dataUrl) => { event.sender.send('screenshot-taken', dataUrl); });
 });
@@ -239,7 +283,7 @@ ipcMain.handle('generate', async (_event, { screenshotBase64, question, transcri
     const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: API_BASE_URL });
     const content = [];
     if (screenshotBase64) {
-      content.push({ type: 'image_url', image_url: { url: screenshotBase64, detail: 'high' } });
+      content.push({ type: 'image_url', image_url: { url: screenshotBase64, detail: 'low' } });
     }
     content.push({ type: 'text', text: buildUserText(question, transcript, pdfContext?.text || null) });
     const result = await client.chat.completions.create({

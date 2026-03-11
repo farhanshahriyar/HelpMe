@@ -10,7 +10,11 @@ import { cn } from '../lib/utils';
 export default function Overlay({
   screenshot,
   providerConfig,
+  pendingQuestion,
   onNewCapture,
+  onCaptureAndSubmit,
+  onClearPending,
+  onPasteImage,
   onClose,
   onSaveConfig,
   initialShowSettings,
@@ -18,6 +22,7 @@ export default function Overlay({
   // ── State ────────────────────────────────────────────────────────────────
   const [showSettings, setShowSettings] = useState(!!initialShowSettings);
   const [showMenu, setShowMenu] = useState(false);
+  const [useScreen, setUseScreen] = useState(true);
   const [toast, setToast] = useState(null);
   const [question, setQuestion] = useState('');
   const [submittedQuestion, setSubmittedQuestion] = useState('');
@@ -29,6 +34,7 @@ export default function Overlay({
   const [recordingTime, setRecordingTime] = useState(0);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [usedScreenshot, setUsedScreenshot] = useState(false);
 
   // ── Live listening state ───────────────────────────────────────────────
   const [isListening, setIsListening] = useState(false);
@@ -56,6 +62,7 @@ export default function Overlay({
   const transcriptTextRef = useRef('');
   const autoAnalysisRef = useRef(null);
   const lastAnalyzedLenRef = useRef(0);
+  const usedScreenshotRef = useRef(false);
 
   // ── Toast helper ───────────────────────────────────────────────────────
   const toastTimerRef = useRef(null);
@@ -226,12 +233,49 @@ export default function Overlay({
   }, [isListening, processAudioChunk, flash]);
 
   // ── Effects ────────────────────────────────────────────────────────────
-  useEffect(() => { if (status === 'streaming' && responseRef.current) responseRef.current.scrollTop = responseRef.current.scrollHeight; }, [response, status]);
-  useEffect(() => { if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight; }, [transcript]);
-  useEffect(() => { if (screenshot) { setShowScreenshot(true); setResponse(''); setStatus('idle'); setErrorMsg(''); } }, [screenshot]);
   useEffect(() => {
+    if (!status || !window.electronAPI) return;
+    if (status === 'streaming' && responseRef.current) responseRef.current.scrollTop = responseRef.current.scrollHeight;
+  }, [response, status]);
+
+  useEffect(() => {
+    if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+  }, [transcript]);
+
+  useEffect(() => {
+    if (screenshot) { setShowScreenshot(true); setResponse(''); setStatus('idle'); setErrorMsg(''); }
+  }, [screenshot]);
+
+
+
+  useEffect(() => {
+    if (!window.electronAPI?.onStopRecordingSignal) return;
     window.electronAPI.onStopRecordingSignal(() => stopRecording());
   }, [stopRecording]);
+  
+  useEffect(() => {
+    const handleGlobalPaste = (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const blob = items[i].getAsFile();
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            if (onPasteImage) onPasteImage(event.target.result);
+            flash({ type: 'success', message: 'Image pasted from clipboard' }, 2000);
+          };
+          reader.readAsDataURL(blob);
+          // e.preventDefault(); // allow default so text isn't blocked if they paste text WITH an image? 
+          // Actually, if it's an image, default is nothing, but let's just break;
+          break;
+        }
+      }
+    };
+    document.addEventListener('paste', handleGlobalPaste);
+    return () => document.removeEventListener('paste', handleGlobalPaste);
+  }, [onPasteImage, flash]);
+
   useEffect(() => {
     return () => {
       if (mediaRecorderRef.current?.state !== 'inactive') mediaRecorderRef.current?.stop();
@@ -257,12 +301,14 @@ export default function Overlay({
   // ── Core action helper ─────────────────────────────────────────────────
   const fireAction = useCallback(async (label, userQuestion) => {
     if (status === 'thinking' || status === 'streaming') return;
-    if (response && submittedQuestion) setHistory(prev => [{ question: submittedQuestion, response }, ...prev]);
+    if (response && submittedQuestion) setHistory(prev => [{ question: submittedQuestion, response, usedScreenshot: usedScreenshotRef.current }, ...prev]);
     setSubmittedQuestion(label);
     setQuestion('');
     setResponse('');
     setStatus('thinking');
     setErrorMsg('');
+    setUsedScreenshot(!!screenshot);
+    usedScreenshotRef.current = !!screenshot;
     if (autoAnalysisRef.current) clearTimeout(autoAnalysisRef.current);
     lastAnalyzedLenRef.current = transcriptTextRef.current.length;
     try {
@@ -284,6 +330,14 @@ export default function Overlay({
     }
   }, [status, response, submittedQuestion, screenshot]);
 
+  // ── Auto-submit when screenshot arrives with pending question ──────────
+  useEffect(() => {
+    if (screenshot && pendingQuestion !== null) {
+      fireAction(pendingQuestion || 'Analyze screen', pendingQuestion);
+      onClearPending();
+    }
+  }, [screenshot, pendingQuestion, fireAction, onClearPending]);
+
   // ── Command bar actions (HelpMe style) ────────────────────────────
   const handleSolve = () => fireAction('Solve', '');
   const handleShorten = () => {
@@ -302,12 +356,27 @@ export default function Overlay({
   // ── Other handlers ────────────────────────────────────────────────────
   const handleSubmit = useCallback(() => {
     if (status === 'thinking' || status === 'streaming') return;
-    if (!question.trim() && !screenshot && !hasTranscript && !pdfName) return;
+    if (!question.trim() && !screenshot && !hasTranscript && !pdfName && !useScreen) return;
+    
+    if (useScreen && !screenshot) {
+      // Trigger auto-capture and let App.jsx handle the submission once crop finishes or is skipped
+      onCaptureAndSubmit(question.trim());
+      return;
+    }
+
     const q = question.trim();
     fireAction(q || (hasTranscript ? 'Live analysis' : pdfName ? 'PDF analysis' : 'Analyze screen'), q);
-  }, [question, screenshot, status, hasTranscript, pdfName, fireAction]);
+  }, [question, screenshot, status, hasTranscript, pdfName, useScreen, fireAction, onCaptureAndSubmit]);
 
-  const handleKeyDown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSubmit(); } };
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSubmit();
+    } else if (e.key.toLowerCase() === 'r' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleReset();
+    }
+  };
 
   const handleNewCapture = () => {
     onNewCapture();
@@ -337,6 +406,8 @@ export default function Overlay({
       setHistory(prev => prev.filter((_, i) => i !== index));
     }
     setSubmittedQuestion(item.question); setResponse(item.response); setStatus('done'); setErrorMsg(''); setQuestion('');
+    setUsedScreenshot(!!item.usedScreenshot);
+    usedScreenshotRef.current = !!item.usedScreenshot;
   };
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -355,7 +426,7 @@ export default function Overlay({
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex items-start justify-end p-2" style={{ background: 'transparent' }}>
-      <div className="glass-panel flex flex-col w-[460px] max-h-[90vh] animate-slide-in overflow-hidden relative" style={{ minHeight: 52 }}>
+      <div className="glass-panel flex flex-col w-full max-w-[420px] max-h-[90vh] animate-slide-in overflow-hidden relative" style={{ minHeight: 52 }}>
 
         {/* ── Toast ── */}
         {toast && (
@@ -585,6 +656,13 @@ export default function Overlay({
                   </div>
                 )}
                 {hasResponse && <MarkdownRenderer content={response} streaming={status === 'streaming'} />}
+                
+                {hasResponse && usedScreenshot && (
+                  <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-white/[0.04] text-zinc-500 text-[10px] font-medium italic">
+                    <Camera className="w-3 h-3 text-zinc-600" />
+                    Sent with screenshot
+                  </div>
+                )}
               </div>
             )}
 
@@ -628,6 +706,20 @@ export default function Overlay({
                     'disabled:opacity-40 disabled:cursor-not-allowed'
                   )}
                 />
+                
+                <button
+                  onClick={() => setUseScreen(u => !u)}
+                  disabled={isLoading || !!screenshot}
+                  className={cn(
+                    'no-drag shrink-0 px-2 h-6 flex items-center justify-center rounded-md text-[10px] font-medium transition-colors border',
+                    useScreen 
+                      ? 'bg-red-600 border-red-500 text-white' 
+                      : 'bg-white/[0.04] border-white/[0.06] text-zinc-400 hover:text-white',
+                    'disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 whitespace-nowrap'
+                  )}
+                >
+                  Use Screen
+                </button>
                 <button
                   onClick={handleSubmit}
                   disabled={isLoading || (!question.trim() && !screenshot && !hasTranscript && !pdfName)}
