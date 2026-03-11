@@ -38,11 +38,9 @@ export default function Overlay({
   const [showHistory, setShowHistory] = useState(false);
   const [usedScreenshot, setUsedScreenshot] = useState(false);
 
-  // ── Live listening state ───────────────────────────────────────────────
-  const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState([]);
-  const [showTranscript, setShowTranscript] = useState(true);
-  const [hasTranscript, setHasTranscript] = useState(false);
+  // ── Voice Record state (Whisper Web Worker) ─────────────────────────
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
   // ── PDF state ─────────────────────────────────────────────────────────────
   const [pdfName, setPdfName] = useState(null);
@@ -51,20 +49,21 @@ export default function Overlay({
   // ── Refs ─────────────────────────────────────────────────────────────────
   const responseRef = useRef(null);
   const textareaRef = useRef(null);
-  const transcriptRef = useRef(null);
   const menuRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
-  const listenMicStreamRef = useRef(null);
-  const listenSysStreamRef = useRef(null);
-  const listenMicRecorderRef = useRef(null);
-  const listenSysRecorderRef = useRef(null);
-  const transcriptTextRef = useRef('');
+
+  // Whisper Worker Refs
+  const whisperWorkerRef = useRef(null);
+  const voiceMediaRecorderRef = useRef(null);
+  const voiceStreamRef = useRef(null);
+  const voiceChunksRef = useRef([]);
+  const usedScreenshotRef = useRef(false);
+
   const autoAnalysisRef = useRef(null);
   const lastAnalyzedLenRef = useRef(0);
-  const usedScreenshotRef = useRef(false);
 
   // ── Toast helper ───────────────────────────────────────────────────────
   const toastTimerRef = useRef(null);
@@ -148,101 +147,7 @@ export default function Overlay({
   }, [stopRecording, flash]);
 
   // ── Listening / transcription ──────────────────────────────────────────
-  const addTranscriptEntry = useCallback((speaker, text) => {
-    setTranscript(prev => [...prev, { speaker, text, id: Date.now() }]);
-    transcriptTextRef.current += `${speaker}: ${text}\n`;
-    setHasTranscript(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isListening || transcript.length === 0) return;
-    if (autoAnalysisRef.current) clearTimeout(autoAnalysisRef.current);
-    autoAnalysisRef.current = setTimeout(async () => {
-      const tLen = transcriptTextRef.current.length;
-      if (tLen <= lastAnalyzedLenRef.current || status === 'thinking' || status === 'streaming') return;
-      lastAnalyzedLenRef.current = tLen;
-      if (response && submittedQuestion) setHistory(prev => [{ question: submittedQuestion, response }, ...prev]);
-      setSubmittedQuestion('Live analysis');
-      setResponse('');
-      setStatus('thinking');
-      setErrorMsg('');
-      try {
-        const result = await window.electronAPI.generate({ screenshotBase64: null, question: '', transcript: transcriptTextRef.current });
-        if (result.error) { setStatus('error'); setErrorMsg(result.error); }
-        else { setResponse(result.text || ''); setStatus('done'); }
-      } catch (err) { setStatus('error'); setErrorMsg(err.message || 'Auto-analysis failed.'); }
-    }, 5000);
-    return () => { if (autoAnalysisRef.current) clearTimeout(autoAnalysisRef.current); };
-  }, [transcript, isListening, status, response, submittedQuestion]);
-
-  const processAudioChunk = useCallback(async (blob, speaker) => {
-    if (blob.size < 1000) return;
-    try {
-      const buf = await blob.arrayBuffer();
-      const text = await window.electronAPI.transcribeAudio(buf);
-      if (text?.trim()) addTranscriptEntry(speaker, text.trim());
-    } catch (err) {
-      console.error(`[HelpMe] ${speaker} transcription error:`, err.message || err);
-    }
-  }, [addTranscriptEntry]);
-
-  const stopListening = useCallback(() => {
-    if (listenMicRecorderRef.current?.state !== 'inactive') listenMicRecorderRef.current?.stop();
-    listenMicStreamRef.current?.getTracks().forEach(t => t.stop());
-    listenMicStreamRef.current = null; listenMicRecorderRef.current = null;
-    if (listenSysRecorderRef.current?.state !== 'inactive') listenSysRecorderRef.current?.stop();
-    listenSysStreamRef.current?.getTracks().forEach(t => t.stop());
-    listenSysStreamRef.current = null; listenSysRecorderRef.current = null;
-    if (autoAnalysisRef.current) clearTimeout(autoAnalysisRef.current);
-    setIsListening(false);
-  }, []);
-
-  const startListening = useCallback(async () => {
-    if (isListening) return;
-    try {
-      const micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      listenMicStreamRef.current = micStream;
-      const micMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-      const micRecorder = new MediaRecorder(micStream, { mimeType: micMime });
-      listenMicRecorderRef.current = micRecorder;
-      micRecorder.ondataavailable = (e) => { if (e.data?.size > 0) processAudioChunk(e.data, 'me'); };
-      micRecorder.start(5000);
-      try {
-        const sysStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        const audioTrack = sysStream.getAudioTracks()[0];
-        sysStream.getVideoTracks().forEach(t => t.stop());
-        if (audioTrack) {
-          const audioOnly = new MediaStream([audioTrack]);
-          listenSysStreamRef.current = audioOnly;
-          const sysMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-          const sysRecorder = new MediaRecorder(audioOnly, { mimeType: sysMime });
-          listenSysRecorderRef.current = sysRecorder;
-          sysRecorder.ondataavailable = (e) => { if (e.data?.size > 0) processAudioChunk(e.data, 'them'); };
-          audioTrack.onended = () => { if (listenSysRecorderRef.current?.state !== 'inactive') listenSysRecorderRef.current?.stop(); };
-          sysRecorder.start(5000);
-        }
-      } catch (sysErr) {
-        console.warn('[HelpMe] System audio unavailable, mic-only mode:', sysErr.message || sysErr);
-      }
-      setIsListening(true);
-      lastAnalyzedLenRef.current = 0;
-      flash({ type: 'listening', message: 'Listening started' }, 3000);
-    } catch {
-      listenMicStreamRef.current?.getTracks().forEach(t => t.stop());
-      listenMicStreamRef.current = null;
-      flash({ type: 'error', message: 'Mic access denied' });
-    }
-  }, [isListening, processAudioChunk, flash]);
-
   // ── Effects ────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!status || !window.electronAPI) return;
-    if (status === 'streaming' && responseRef.current) responseRef.current.scrollTop = responseRef.current.scrollHeight;
-  }, [response, status]);
-
-  useEffect(() => {
-    if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
-  }, [transcript]);
 
   useEffect(() => {
     if (screenshot) { setShowScreenshot(true); setResponse(''); setStatus('idle'); setErrorMsg(''); }
@@ -283,11 +188,10 @@ export default function Overlay({
       if (mediaRecorderRef.current?.state !== 'inactive') mediaRecorderRef.current?.stop();
       clearInterval(timerRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
-      if (listenMicRecorderRef.current?.state !== 'inactive') listenMicRecorderRef.current?.stop();
-      if (listenSysRecorderRef.current?.state !== 'inactive') listenSysRecorderRef.current?.stop();
-      listenMicStreamRef.current?.getTracks().forEach(t => t.stop());
-      listenSysStreamRef.current?.getTracks().forEach(t => t.stop());
-      if (autoAnalysisRef.current) clearTimeout(autoAnalysisRef.current);
+      
+      if (voiceMediaRecorderRef.current?.state !== 'inactive') voiceMediaRecorderRef.current?.stop();
+      voiceStreamRef.current?.getTracks().forEach(t => t.stop());
+      
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
@@ -311,13 +215,11 @@ export default function Overlay({
     setErrorMsg('');
     setUsedScreenshot(!!screenshot);
     usedScreenshotRef.current = !!screenshot;
-    if (autoAnalysisRef.current) clearTimeout(autoAnalysisRef.current);
-    lastAnalyzedLenRef.current = transcriptTextRef.current.length;
+    
     try {
       const result = await window.electronAPI.generate({
         screenshotBase64: screenshot || null,
         question: userQuestion,
-        transcript: transcriptTextRef.current || null,
       });
       if (result.error) {
         setStatus('error');
@@ -331,6 +233,87 @@ export default function Overlay({
       setErrorMsg(err.message || 'Generation failed.');
     }
   }, [status, response, submittedQuestion, screenshot]);
+
+  // ── Voice Record via Web Worker ────────────────────────────────────────
+  const processVoiceAudio = useCallback(async (blob) => {
+    setIsTranscribing(true);
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      // Decode audio into standard 16000Hz PCM required by Whisper
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      const float32Array = audioBuffer.getChannelData(0);
+      
+      if (!whisperWorkerRef.current) {
+        whisperWorkerRef.current = new Worker(new URL('../workers/whisperWorker.js', import.meta.url), { type: 'module' });
+        whisperWorkerRef.current.onmessage = (e) => {
+          const { type, text, error } = e.data;
+          if (type === 'ready') {
+            console.log('[HelpMe] Local Whisper worker ready');
+          } else if (type === 'result') {
+            setIsTranscribing(false);
+            if (text?.trim()) {
+              setQuestion(text.trim());
+              // Force next React tick
+              setTimeout(() => {
+                const q = text.trim();
+                fireAction(q, q);
+              }, 50);
+            }
+          } else if (type === 'error') {
+            setIsTranscribing(false);
+            flash({ type: 'error', message: 'Transcription error: ' + error });
+          }
+        };
+      }
+      whisperWorkerRef.current.postMessage({ type: 'transcribe', audio: float32Array });
+    } catch (err) {
+      console.error(err);
+      setIsTranscribing(false);
+      flash({ type: 'error', message: 'Audio processing failed' });
+    }
+  }, [flash, fireAction]);
+
+  const stopVoiceRecord = useCallback(() => {
+    if (voiceMediaRecorderRef.current && voiceMediaRecorderRef.current.state !== 'inactive') {
+      voiceMediaRecorderRef.current.stop();
+    }
+    if (voiceStreamRef.current) {
+      voiceStreamRef.current.getTracks().forEach(t => t.stop());
+      voiceStreamRef.current = null;
+    }
+    setIsVoiceRecording(false);
+  }, []);
+
+  const startVoiceRecord = useCallback(async () => {
+    if (isVoiceRecording || isTranscribing) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceStreamRef.current = stream;
+      
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      voiceMediaRecorderRef.current = recorder;
+      voiceChunksRef.current = [];
+      
+      recorder.ondataavailable = e => { if (e.data.size > 0) voiceChunksRef.current.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(voiceChunksRef.current, { type: mimeType || 'audio/wav' });
+        processVoiceAudio(blob);
+      };
+      
+      recorder.start();
+      setIsVoiceRecording(true);
+      flash({ type: 'listening', message: 'Recording started...' }, 2000);
+    } catch (err) {
+      console.error(err);
+      flash({ type: 'error', message: 'Mic access denied' });
+    }
+  }, [isVoiceRecording, isTranscribing, flash, processVoiceAudio]);
+
+  useEffect(() => {
+    return () => whisperWorkerRef.current?.terminate();
+  }, []);
 
   // ── Auto-submit when screenshot arrives with pending question ──────────
   useEffect(() => {
@@ -471,19 +454,21 @@ export default function Overlay({
           {/* Divider */}
           <div className="w-px h-4 bg-white/[0.08] mx-0.5" />
 
-          {/* Start/Stop Listening icon button */}
+          {/* Start/Stop Voice Recording icon button */}
           <button
-            onClick={isListening ? stopListening : startListening}
-            title={isListening ? 'Stop Listening' : 'Start Listening'}
+            onClick={isVoiceRecording ? stopVoiceRecord : startVoiceRecord}
+            disabled={isTranscribing || isLoading}
+            title={isVoiceRecording ? 'Stop Recording' : 'Record Voice'}
             className={cn(
               'no-drag p-1.5 rounded-md transition-all active:scale-90',
-              isListening
+              isTranscribing ? 'text-zinc-500 cursor-not-allowed opacity-50' :
+              isVoiceRecording
                 ? 'bg-red-600/25 text-red-400 hover:bg-red-600/35'
                 : 'text-zinc-500 hover:text-red-400 hover:bg-red-600/15',
-              isLoading && 'opacity-40 pointer-events-none'
+              (isLoading || isTranscribing) && 'opacity-40 pointer-events-none'
             )}
           >
-            {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+            {isVoiceRecording ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
           </button>
 
           {/* Capture Screen icon button */}
@@ -515,10 +500,15 @@ export default function Overlay({
               {formatTime(recordingTime)}
             </span>
           )}
-          {isListening && !isRecording && !isLoading && (
+          {isVoiceRecording && !isLoading && (
             <span className="text-red-400 text-[9px] font-semibold flex items-center gap-1 ml-1">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-              LIVE
+              RECORDING
+            </span>
+          )}
+          {isTranscribing && !isLoading && (
+            <span className="text-indigo-400 text-[9px] font-semibold flex items-center gap-1 ml-1 animate-pulse">
+              PROCESSING AUDIO...
             </span>
           )}
 
@@ -565,19 +555,13 @@ export default function Overlay({
                     <Circle className="w-3 h-3 fill-red-500 text-red-500" /> Record Screen
                   </button>
                 )}
-                {(hasResponse || hasTranscript) && (
+                {(hasResponse) && (
                   <>
                     <div className="border-t border-white/[0.06] my-1" />
                     {hasResponse && (
                       <button onClick={() => { handleReset(); setShowMenu(false); }}
                         className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
                         <X className="w-3 h-3" /> Clear Response
-                      </button>
-                    )}
-                    {hasTranscript && (
-                      <button onClick={() => { clearTranscript(); setShowMenu(false); }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
-                        <X className="w-3 h-3" /> Clear Transcript
                       </button>
                     )}
                   </>
@@ -603,31 +587,6 @@ export default function Overlay({
             ══════════════════════════════════════════════════════════════════ */}
         {!showSettings && (
           <>
-            {/* ── Live Transcript ── */}
-            {transcript.length > 0 && (
-              <div className="border-t border-white/[0.06]">
-                <button onClick={() => setShowTranscript(t => !t)}
-                  className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.02] transition-colors">
-                  <span className="text-zinc-500 text-[10px] font-medium flex items-center gap-1.5">
-                    {isListening && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
-                    Transcript ({transcript.length})
-                  </span>
-                  {showTranscript ? <ChevronUp className="w-3 h-3 text-zinc-700" /> : <ChevronDown className="w-3 h-3 text-zinc-700" />}
-                </button>
-                {showTranscript && (
-                  <div ref={transcriptRef} className="px-3 pb-2 max-h-[110px] overflow-y-auto flex flex-col gap-0.5">
-                    {transcript.map((entry) => (
-                      <div key={entry.id} className="flex gap-1.5 text-[10px] leading-relaxed">
-                        <span className={cn('shrink-0 font-mono font-bold', entry.speaker === 'me' ? 'text-red-400/60' : 'text-orange-400/60')}>
-                          {entry.speaker}:
-                        </span>
-                        <span className="text-zinc-400">{entry.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* ── PDF badge ── */}
             {pdfName && (
@@ -714,12 +673,19 @@ export default function Overlay({
                   value={question}
                   onChange={e => setQuestion(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={isCapturingScreen ? "Capturing screen..." : "Click to ask HelpMe"}
-                  disabled={isLoading || isCapturingScreen}
+                  placeholder={
+                    isVoiceRecording ? "Listening..." :
+                    isTranscribing ? "Processing audio..." :
+                    isCapturingScreen ? "Capturing screen..." : 
+                    "Click to ask HelpMe"
+                  }
+                  disabled={isLoading || isCapturingScreen || isVoiceRecording || isTranscribing}
                   className={cn(
                     'no-drag flex-1 bg-white/[0.04] border border-white/[0.06] rounded-md',
                     'text-white text-[11px] placeholder:text-zinc-600 outline-none',
                     isCapturingScreen && 'placeholder:text-indigo-400 placeholder:animate-pulse',
+                    isVoiceRecording && 'placeholder:text-red-400 placeholder:animate-pulse',
+                    isTranscribing && 'placeholder:text-indigo-400 placeholder:animate-pulse',
                     'px-2.5 py-1.5 transition-colors',
                     'focus:border-white/[0.12] focus:bg-white/[0.06]',
                     'disabled:opacity-40 disabled:cursor-not-allowed'
@@ -742,7 +708,7 @@ export default function Overlay({
                 */}
                 <button
                   onClick={handleSubmit}
-                  disabled={isLoading || (!question.trim() && !screenshot && !hasTranscript && !pdfName)}
+                  disabled={isLoading || isCapturingScreen || isVoiceRecording || isTranscribing || (!question.trim() && !screenshot && !pdfName)}
                   className={cn(
                     'no-drag shrink-0 w-6 h-6 rounded-md flex items-center justify-center transition-all',
                     'bg-red-600 hover:bg-red-500 text-white',
