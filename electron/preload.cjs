@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   startCrop: () => ipcRenderer.send('start-crop'),
   finishCrop: () => ipcRenderer.send('finish-crop'),
+  captureFullscreen: () => ipcRenderer.send('capture-fullscreen'),
+
+  onFullscreenCaptured: (cb) => {
+    ipcRenderer.removeAllListeners('fullscreen-captured');
+    ipcRenderer.on('fullscreen-captured', (_, dataUrl) => cb(dataUrl));
+  },
 
   onStartCropUI: (cb) => {
     ipcRenderer.removeAllListeners('start-crop-ui');
@@ -40,7 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   clearListeners: () => {
-    ['screenshot-taken', 'gen-chunk', 'gen-done', 'gen-error', 'stop-recording-signal', 'start-crop-ui'].forEach(ch => {
+    ['screenshot-taken', 'gen-chunk', 'gen-done', 'gen-error', 'stop-recording-signal', 'start-crop-ui', 'fullscreen-captured'].forEach(ch => {
       ipcRenderer.removeAllListeners(ch);
     });
   },

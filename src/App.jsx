@@ -6,6 +6,7 @@ export default function App() {
   const [screenshot, setScreenshot] = useState(null);
   const [cropImage, setCropImage] = useState(null);
   const [pendingQuestion, setPendingQuestion] = useState(null);
+  const [captureError, setCaptureError] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
   const [providerConfig, setProviderConfig] = useState(() => {
     try {
@@ -44,6 +45,15 @@ export default function App() {
     // onScreenshot auto-removes previous listener before registering
     window.electronAPI.onScreenshot((dataUrl) => setScreenshot(dataUrl));
     window.electronAPI.onStartCropUI((dataUrl) => setCropImage(dataUrl));
+    window.electronAPI.onFullscreenCaptured((dataUrl) => {
+      // Full-screen capture arrived — set it as screenshot and let auto-submit happen
+      if (dataUrl) {
+        setCaptureError(false);
+        setScreenshot(dataUrl);
+      } else {
+        setCaptureError(true);
+      }
+    });
   }, []);
 
   const handleSaveConfig = (config) => {
@@ -84,10 +94,12 @@ export default function App() {
       providerConfig={providerConfig}
       pendingQuestion={pendingQuestion}
       onNewCapture={() => window.electronAPI.startCrop()}
+      captureError={captureError}
       onCaptureAndSubmit={(question) => {
         setPendingQuestion(question);
         setAutoSubmit(true);
-        window.electronAPI.startCrop();
+        setCaptureError(false);
+        window.electronAPI.captureFullscreen();
       }}
       onClearPending={() => setPendingQuestion(null)}
       onPasteImage={(dataUrl) => setScreenshot(dataUrl)}

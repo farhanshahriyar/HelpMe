@@ -13,6 +13,7 @@ export default function Overlay({
   pendingQuestion,
   onNewCapture,
   onCaptureAndSubmit,
+  captureError, // NEW
   onClearPending,
   onPasteImage,
   onClose,
@@ -24,6 +25,7 @@ export default function Overlay({
   const [showMenu, setShowMenu] = useState(false);
   const [useScreen, setUseScreen] = useState(true);
   const [toast, setToast] = useState(null);
+  const [isCapturingScreen, setIsCapturingScreen] = useState(false);
   const [question, setQuestion] = useState('');
   const [submittedQuestion, setSubmittedQuestion] = useState('');
   const [response, setResponse] = useState('');
@@ -333,10 +335,20 @@ export default function Overlay({
   // ── Auto-submit when screenshot arrives with pending question ──────────
   useEffect(() => {
     if (screenshot && pendingQuestion !== null) {
+      setIsCapturingScreen(false);
       fireAction(pendingQuestion || 'Analyze screen', pendingQuestion);
       onClearPending();
     }
   }, [screenshot, pendingQuestion, fireAction, onClearPending]);
+
+  // ── Auto-submit fallback if screen capture fails ──────────
+  useEffect(() => {
+    if (captureError && pendingQuestion !== null) {
+      setIsCapturingScreen(false);
+      fireAction(pendingQuestion || 'Analyze screen', pendingQuestion);
+      onClearPending();
+    }
+  }, [captureError, pendingQuestion, fireAction, onClearPending]);
 
   // ── Command bar actions (HelpMe style) ────────────────────────────
   const handleSolve = () => fireAction('Solve', '');
@@ -355,10 +367,11 @@ export default function Overlay({
 
   // ── Other handlers ────────────────────────────────────────────────────
   const handleSubmit = useCallback(() => {
-    if (status === 'thinking' || status === 'streaming') return;
+    if (status === 'thinking' || status === 'streaming' || isCapturingScreen) return;
     if (!question.trim() && !screenshot && !hasTranscript && !pdfName && !useScreen) return;
     
     if (useScreen && !screenshot) {
+      setIsCapturingScreen(true);
       // Trigger auto-capture and let App.jsx handle the submission once crop finishes or is skipped
       onCaptureAndSubmit(question.trim());
       return;
@@ -379,6 +392,11 @@ export default function Overlay({
   };
 
   const handleNewCapture = () => {
+    if (screenshot) {
+      // Toggle off — clear the current screenshot
+      onPasteImage(null);
+      return;
+    }
     onNewCapture();
     setQuestion(''); setSubmittedQuestion(''); setResponse(''); setStatus('idle'); setErrorMsg('');
     textareaRef.current?.focus();
@@ -696,17 +714,18 @@ export default function Overlay({
                   value={question}
                   onChange={e => setQuestion(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Click to ask HelpMe"
-                  disabled={isLoading}
+                  placeholder={isCapturingScreen ? "Capturing screen..." : "Click to ask HelpMe"}
+                  disabled={isLoading || isCapturingScreen}
                   className={cn(
                     'no-drag flex-1 bg-white/[0.04] border border-white/[0.06] rounded-md',
                     'text-white text-[11px] placeholder:text-zinc-600 outline-none',
+                    isCapturingScreen && 'placeholder:text-indigo-400 placeholder:animate-pulse',
                     'px-2.5 py-1.5 transition-colors',
                     'focus:border-white/[0.12] focus:bg-white/[0.06]',
                     'disabled:opacity-40 disabled:cursor-not-allowed'
                   )}
                 />
-                
+                {/*  
                 <button
                   onClick={() => setUseScreen(u => !u)}
                   disabled={isLoading || !!screenshot}
@@ -720,6 +739,7 @@ export default function Overlay({
                 >
                   Use Screen
                 </button>
+                */}
                 <button
                   onClick={handleSubmit}
                   disabled={isLoading || (!question.trim() && !screenshot && !hasTranscript && !pdfName)}

@@ -113,6 +113,28 @@ function createOverlay() {
 
 let originalBounds = null;
 
+// ── Full-screen capture (no crop UI) ─ used by "Use Screen" ──────────────────
+ipcMain.on('capture-fullscreen', async (event) => {
+  if (!overlayWindow) return;
+  overlayWindow.hide();
+  await new Promise(r => setTimeout(r, 180));
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.size;
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } });
+    const primary = sources.find(s => s.display_id === String(primaryDisplay.id)) || sources[0];
+    const dataUrl = primary ? 'data:image/jpeg;base64,' + primary.thumbnail.toJPEG(85).toString('base64') : null;
+    overlayWindow?.show();
+    overlayWindow?.focus();
+    event.sender.send('fullscreen-captured', dataUrl);
+  } catch (err) {
+    console.error('Fullscreen capture error:', err);
+    overlayWindow?.show();
+    overlayWindow?.focus();
+    event.sender.send('fullscreen-captured', null);
+  }
+});
+
 async function startCropSequence(event) {
   if (!overlayWindow) return;
   originalBounds = overlayWindow.getBounds();
