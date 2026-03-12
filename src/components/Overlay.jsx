@@ -42,6 +42,10 @@ export default function Overlay({
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
+  // ── Transcript state ──────────────────────────────────────────────────────
+  const [transcript, setTranscript] = useState([]);
+  const [hasTranscript, setHasTranscript] = useState(false);
+
   // ── PDF state ─────────────────────────────────────────────────────────────
   const [pdfName, setPdfName] = useState(null);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -61,6 +65,7 @@ export default function Overlay({
   const voiceStreamRef = useRef(null);
   const voiceChunksRef = useRef([]);
   const usedScreenshotRef = useRef(false);
+  const transcriptTextRef = useRef('');
 
   const autoAnalysisRef = useRef(null);
   const lastAnalyzedLenRef = useRef(0);
