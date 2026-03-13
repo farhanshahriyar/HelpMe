@@ -432,7 +432,7 @@ export default function Overlay({
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex items-start justify-end p-2" style={{ background: 'transparent' }}>
-      <div className="glass-panel flex flex-col w-full max-w-[420px] max-h-[90vh] animate-slide-in overflow-hidden relative" style={{ minHeight: 52 }}>
+      <div className="glass-panel flex flex-col w-full max-w-[420px] max-h-[90vh] animate-slide-in relative" style={{ minHeight: 52 }}>
 
         {/* ── Toast ── */}
         {toast && (
@@ -530,7 +530,7 @@ export default function Overlay({
             </button>
 
             {showMenu && (
-              <div className="absolute top-full right-0 mt-1 w-40 bg-zinc-900/95 backdrop-blur-xl border border-white/[0.08] rounded-lg shadow-2xl shadow-black/60 py-1 z-50">
+              <div className="absolute top-full right-0 mt-1 w-40 max-h-[250px] overflow-y-auto bg-zinc-900 backdrop-blur-xl border border-white/[0.08] rounded-lg shadow-2xl shadow-black/60 py-1 z-50">
                 <button onClick={() => { setShowSettings(s => !s); setShowMenu(false); }}
                   className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
                   <Settings className="w-3 h-3" /> Add API Key
