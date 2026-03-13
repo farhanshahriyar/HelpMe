@@ -44,18 +44,34 @@ export default function CropOverlay({ image, onCrop, onCancel }) {
       const scaleX = img.naturalWidth / window.innerWidth;
       const scaleY = img.naturalHeight / window.innerHeight;
 
+      // Crop at native resolution first
+      let cropW = Math.round(width * scaleX);
+      let cropH = Math.round(height * scaleY);
+      const cropX = Math.round(left * scaleX);
+      const cropY = Math.round(top * scaleY);
+
+      // Resize to fit within MAX_DIM to keep base64 payload small
+      const MAX_DIM = 1024;
+      let outW = cropW;
+      let outH = cropH;
+      if (outW > MAX_DIM || outH > MAX_DIM) {
+        const ratio = Math.min(MAX_DIM / outW, MAX_DIM / outH);
+        outW = Math.round(outW * ratio);
+        outH = Math.round(outH * ratio);
+      }
+
       const canvas = document.createElement('canvas');
-      canvas.width = width * scaleX;
-      canvas.height = height * scaleY;
+      canvas.width = outW;
+      canvas.height = outH;
       const ctx = canvas.getContext('2d');
 
       ctx.drawImage(
         img,
-        left * scaleX, top * scaleY, width * scaleX, height * scaleY,
-        0, 0, canvas.width, canvas.height
+        cropX, cropY, cropW, cropH,
+        0, 0, outW, outH
       );
 
-      const croppedUrl = canvas.toDataURL('image/jpeg', 0.9);
+      const croppedUrl = canvas.toDataURL('image/jpeg', 0.75);
       onCrop(croppedUrl);
     };
   };

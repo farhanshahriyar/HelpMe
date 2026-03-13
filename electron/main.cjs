@@ -305,7 +305,10 @@ ipcMain.handle('generate', async (_event, { screenshotBase64, question, transcri
     const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: API_BASE_URL });
     const content = [];
     if (screenshotBase64) {
-      content.push({ type: 'image_url', image_url: { url: screenshotBase64, detail: 'low' } });
+      // Log image payload size for debugging
+      const payloadKB = Math.round(screenshotBase64.length / 1024);
+      console.log(`[HelpMe] Image payload: ~${payloadKB} KB`);
+      content.push({ type: 'image_url', image_url: { url: screenshotBase64, detail: 'auto' } });
     }
     content.push({ type: 'text', text: buildUserText(question, transcript, pdfContext?.text || null) });
     const result = await client.chat.completions.create({
@@ -319,8 +322,10 @@ ipcMain.handle('generate', async (_event, { screenshotBase64, question, transcri
     const text = result.choices[0]?.message?.content || '';
     return { text };
   } catch (err) {
-    console.error('[HelpMe] Generate error:', err.message || err);
-    return { error: err.message || 'Generation failed.' };
+    const status = err.status || err.statusCode || '';
+    const body = err.error?.message || err.message || 'Generation failed.';
+    console.error(`[HelpMe] Generate error (${status}):`, body);
+    return { error: status ? `${status} – ${body}` : body };
   }
 });
 
