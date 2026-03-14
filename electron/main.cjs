@@ -322,10 +322,19 @@ ipcMain.handle('generate', async (_event, { screenshotBase64, question, transcri
     const text = result.choices[0]?.message?.content || '';
     return { text };
   } catch (err) {
-    const status = err.status || err.statusCode || '';
-    const body = err.error?.message || err.message || 'Generation failed.';
-    console.error(`[HelpMe] Generate error (${status}):`, body);
-    return { error: status ? `${status} – ${body}` : body };
+    const status = err.status || err.statusCode || 0;
+    console.error(`[HelpMe] Generate error (${status}):`, err.error?.message || err.message || err);
+
+    const friendly = {
+      429: 'Hold on, you\'ve hit your limit. Come back tomorrow.',
+      500: 'The server ran into an issue processing your request. Try again in a moment.',
+      502: 'The server is temporarily unavailable. Please try again shortly.',
+      503: 'The service is currently overloaded. Please try again in a few minutes.',
+      401: 'Your API key is invalid or expired. Check your key in Settings.',
+      403: 'Access denied. Your API key may not have permission for this model.',
+    }[status];
+
+    return { error: friendly || err.error?.message || err.message || 'Something went wrong. Please try again.' };
   }
 });
 

@@ -434,7 +434,7 @@ export default function Overlay({
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex items-start justify-end p-2" style={{ background: 'transparent' }}>
+    <div className="flex items-start justify-end p-2" style={{ background: 'transparent' }}>
       <div className="glass-panel flex flex-col w-full max-w-[420px] max-h-[90vh] animate-slide-in overflow-hidden relative" style={{ minHeight: 52 }}>
 
         {/* ── Toast ── */}
@@ -550,31 +550,6 @@ export default function Overlay({
               className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
               <Settings className="w-3 h-3" /> Add API Key
             </button>
-            <button
-              onClick={() => { handleOpenPdf(); setShowMenu(false); }}
-              disabled={pdfLoading}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors disabled:opacity-40">
-              <FileText className="w-3 h-3" />
-              {pdfLoading ? 'Parsing PDF…' : pdfName ? 'Replace PDF' : 'Upload PDF'}
-            </button>
-            {pdfName && (
-              <button onClick={() => { handleClearPdf(); setShowMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-400/70 hover:text-red-400 hover:bg-red-500/5 transition-colors">
-                <X className="w-3 h-3" /> Remove PDF
-              </button>
-            )}
-            {isRecording && (
-              <button onClick={() => { stopRecording(); setShowMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors">
-                <Square className="w-3 h-3 fill-current" /> Stop Recording
-              </button>
-            )}
-            {!isRecording && (
-              <button onClick={() => { startRecording(); setShowMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
-                <Circle className="w-3 h-3 fill-red-500 text-red-500" /> Record Screen
-              </button>
-            )}
             {(hasResponse) && (
               <>
                 <div className="border-t border-white/[0.06] my-1" />
